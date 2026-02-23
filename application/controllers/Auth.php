@@ -4,24 +4,12 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 class Auth extends MY_Controller {
 
     private $secret = "SECRET_KEY_API_123";
-    private $usersFile;
 
     public function __construct() {
         parent::__construct();
-        // Use file-based storage for development
-        $this->usersFile = FCPATH . 'users_dev.json';
-    }
-
-    private function getUsers() {
-        if (file_exists($this->usersFile)) {
-            $content = file_get_contents($this->usersFile);
-            return json_decode($content, true) ?: [];
-        }
-        return [];
     }
 
     public function login() {
-
         $input = json_decode(file_get_contents("php://input"), true);
 
         if (!is_array($input)) {
@@ -41,10 +29,9 @@ class Auth extends MY_Controller {
             return;
         }
 
-        // Get user dari database atau file
+        // Get user dari database
         $user = null;
         
-        // Try database first
         if ($this->db_available && isset($this->db)) {
             try {
                 $user = $this->db
@@ -53,17 +40,6 @@ class Auth extends MY_Controller {
                     ->row();
             } catch (Exception $e) {
                 $user = null;
-            }
-        }
-        
-        // Fallback ke file-based users
-        if (!$user) {
-            $users = $this->getUsers();
-            foreach ($users as $u) {
-                if ($u['username'] === $username) {
-                    $user = (object)$u;
-                    break;
-                }
             }
         }
 

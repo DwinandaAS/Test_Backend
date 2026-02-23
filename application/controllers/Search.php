@@ -9,67 +9,60 @@ class Search extends MY_Controller {
     }
 
     private function parseCSVData($csvString) {
-        // Normalize line endings
+
+        if (!$csvString) {
+            return [];
+        }
+
+        // convert literal \n jadi newline asli
+        $csvString = str_replace("\\n", "\n", $csvString);
+
+        // normalize line ending
         $csvString = str_replace(["\r\n", "\r"], "\n", $csvString);
+
         $rows = explode("\n", $csvString);
         $data = [];
-        
-        // Skip header row (NIM|NAMA|YMD)
-        for ($i = 1; $i < count($rows); $i++) {
-            $row = trim($rows[$i]);
-            if (empty($row)) continue;
-            
+
+        foreach ($rows as $index => $row) {
+
+            $row = trim($row);
+
+            if ($index == 0 || empty($row)) {
+                continue; // skip header
+            }
+
             $fields = explode('|', $row);
-            if (count($fields) >= 3) {
-                $nim = trim($fields[0]);
-                $nama = trim($fields[1]);
-                $ymd = trim($fields[2]);
-                
-                // Only add if all fields have values
-                if (!empty($nim) && !empty($nama) && !empty($ymd)) {
-                    $data[] = [
-                        'NIM' => $nim,
-                        'NAMA' => $nama,
-                        'YMD' => $ymd
-                    ];
-                }
+
+            if (count($fields) < 3) {
+                continue;
+            }
+
+            $nim  = preg_replace('/[^0-9]/', '', $fields[0]);
+            $nama = trim($fields[1]);
+            $ymd  = preg_replace('/[^0-9]/', '', $fields[2]);
+
+            if ($nim && $nama && $ymd) {
+                $data[] = [
+                    'NIM' => $nim,
+                    'NAMA' => $nama,
+                    'YMD' => $ymd
+                ];
             }
         }
-        
+
         return $data;
     }
 
     private function getExternalData() {
 
-        // Cache file untuk fallback saat API tidak tersedia
-        $cacheFile = FCPATH . 'external_data_cache.json';
-        $cacheExpiration = 3600; // 1 jam
-        
-        // Check if cache adalah fresh (less than 1 hour old)
-        if (file_exists($cacheFile)) {
-            $cacheAge = time() - filemtime($cacheFile);
-            if ($cacheAge < $cacheExpiration) {
-                $cachedData = json_decode(file_get_contents($cacheFile), true);
-                if ($cachedData && is_array($cachedData) && !empty($cachedData)) {
-                    return $cachedData;
-                }
-            }
-        }
-        
-        // Try to fetch fresh data from API
-        try {
-            $url = "https://bit.ly/48ejMhW";
+        $url = "https://bit.ly/48ejMhW";
 
-            // Enable allow_url_fopen temporarily if needed
-            $originalSetting = ini_get('allow_url_fopen');
-            if (!$originalSetting) {
-                ini_set('allow_url_fopen', '1');
-            }
+        try {
 
             $context = stream_context_create([
                 'http' => [
                     'method' => 'GET',
-                    'timeout' => 10,
+                    'timeout' => 15,
                     'ignore_errors' => true,
                     'user_agent' => 'Mozilla/5.0'
                 ],
@@ -81,32 +74,20 @@ class Search extends MY_Controller {
 
             $result = @file_get_contents($url, false, $context);
 
-            // Restore original setting
-            if (!$originalSetting) {
-                ini_set('allow_url_fopen', '0');
+            if ($result === false || empty($result)) {
+                return [];
             }
 
-            if ($result !== false && !empty($result)) {
-                $jsonData = json_decode($result, true);
-                if ($jsonData && isset($jsonData['RC']) && $jsonData['RC'] == 200 && isset($jsonData['DATA'])) {
-                    // Parse CSV data dari field DATA
-                    $parsedData = $this->parseCSVData($jsonData['DATA']);
-                    if (!empty($parsedData)) {
-                        // Update cache dengan data baru
-                        file_put_contents($cacheFile, json_encode($parsedData));
-                        return $parsedData;
-                    }
-                }
+            $jsonData = json_decode($result, true);
+
+            if (!$jsonData || !isset($jsonData['DATA'])) {
+                return [];
             }
+
+            return $this->parseCSVData($jsonData['DATA']);
+
         } catch (Exception $e) {
-            // Fallback to cache
-        }
-
-        if (file_exists($cacheFile)) {
-            $cachedData = json_decode(file_get_contents($cacheFile), true);
-            if ($cachedData && is_array($cachedData) && !empty($cachedData)) {
-                return $cachedData;
-            }
+            return [];
         }
     }
 
@@ -123,10 +104,10 @@ class Search extends MY_Controller {
 
     public function nim() {
 
-        $data = $this->getExternalData();
+        $data = $this->getExternalData() ?? [];
 
         $filtered = array_filter($data, function($row){
-            return $row['NIM'] == "9352078461";
+            return trim($row['NIM']) === "9352078461";
         });
 
         echo json_encode(array_values($filtered));
